@@ -1,14 +1,13 @@
 import math
 import os
-import requests
 import re
 import math
 from datetime import datetime
 import time
 from dotenv import load_dotenv
+from llm import call_llm
 
 load_dotenv()
-
 
 OLLAMA_URL = os.environ.get('OLLAMA_URL')
 MODEL = os.environ.get('MODEL') 
@@ -59,12 +58,18 @@ def tool_knowledge(query: str) -> str:
             return value
     return f"No knowledge found for: '{query}'. Try different keywords."
 
+def tool_word_count(text: str) -> str:
+    """Count words """
+    words = text.strip().split()
+    return f"Word count: {len(words)}, Character count: {len(text)}"
+
 
 # Tool registry — maps tool name → function
 TOOLS = {
     "calculator": tool_calculator,
     "get_time": tool_get_time,
     "search_knowledge": tool_knowledge,
+    "word_count": tool_word_count
 }
 
 # ─────────────────────────────────────────────
@@ -72,12 +77,16 @@ TOOLS = {
 # This teaches the LLM HOW to think and act
 # ─────────────────────────────────────────────
 
-SYSTEM_PROMPT = """You are a reasoning agent. You solve problems step by step using tools.
+tool_descriptions = "\n".join([
+    "- calculator(expression): Evaluates a math expression.",
+    "- get_time(query): Returns current date and time information.",
+    "- search_knowledge(query): Searches a knowledge base.",
+    "- word_count(text): Counts words and characters in a text."
+])
 
-You have access to these tools:
-- calculator(expression): Evaluates a math expression. Example: calculator(24 * 60)
-- get_time(query): Returns current date and time information.
-- search_knowledge(query): Searches a knowledge base for information.
+SYSTEM_PROMPT = f"""You are a reasoning agent. You solve problems step by step using tools.
+
+{tool_descriptions}
 
 STRICT FORMAT — you must follow this exactly:
 
@@ -99,23 +108,7 @@ RULES:
 - When you have enough information, give the Final Answer
 """
 
-# ─────────────────────────────────────────────
-# LLM CALL
-# ─────────────────────────────────────────────
 
-def call_llm(messages: list[dict]) -> str:
-    payload = {
-        "model": MODEL,
-        "messages": messages,
-        "stream": False,
-        "options": {
-            "temperature": 0,
-            "stop": ["\nObservation:", "Observation:"] # <--- ADD THIS
-        }  # deterministic for agents
-    }
-    response = requests.post(OLLAMA_URL, json=payload)
-    response.raise_for_status()
-    return response.json()["message"]["content"]
 
 
 # ─────────────────────────────────────────────
@@ -249,4 +242,6 @@ if __name__ == "__main__":
     # run_agent("What is Ollama and on which port does it run? Also tell me what 11434 divided by 2 is.")
 
     # Goal 4: Time awareness
-    run_agent("What day of the week is it today, and what is the square root of today's day of the year?")
+    # run_agent("What day of the week is it today, and what is the square root of today's day of the year?")
+
+    run_agent("How many words are in this sentence: The quick brown fox jumps over the lazy dog")
