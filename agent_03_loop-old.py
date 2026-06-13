@@ -92,9 +92,7 @@ Final Answer: <your complete answer to the user>
 RULES:
 - Always start with a Thought
 - Only call ONE tool per response
-- STOP generating text immediately after the Action.
-- Do NOT generate an "Observation" yourself. 
-- Wait for the user to provide the "Observation" in the next message.
+- Wait for the Observation before your next Thought
 - Never make up tool results — always use the actual Observation
 - When you have enough information, give the Final Answer
 """
@@ -108,10 +106,7 @@ def call_llm(messages: list[dict]) -> str:
         "model": MODEL,
         "messages": messages,
         "stream": False,
-        "options": {
-            "temperature": 0,
-            "stop": ["\nObservation:", "Observation:"] # <--- ADD THIS
-        }  # deterministic for agents
+        "options": {"temperature": 0}  # deterministic for agents
     }
     response = requests.post(OLLAMA_URL, json=payload)
     response.raise_for_status()
@@ -148,7 +143,7 @@ def parse_llm_output(text: str) -> dict:
         return result  # No action needed if final answer exists
 
     # Extract Action — matches: tool_name(input)
-    action_match = re.search(r"Action:\s*(\w+)\((.*?)\)", text, re.DOTALL)
+    action_match = re.search(r"Action:\s*(\w+)\((.+?)\)", text, re.DOTALL)
     if action_match:
         result["action"] = action_match.group(1).strip()
         result["action_input"] = action_match.group(2).strip()
@@ -189,7 +184,6 @@ def run_agent(user_goal: str, max_steps: int = 8) -> str:
     for step in range(1, max_steps + 1):
         print(f"\n--- Step {step} ---")
 
-        print(messages)
         # ① THINK: ask LLM what to do next
         llm_output = call_llm(messages)
         print(f"\n🧠 LLM Output:\n{llm_output}")
@@ -239,14 +233,14 @@ def run_agent(user_goal: str, max_steps: int = 8) -> str:
 if __name__ == "__main__":
     print("🤖 Phase 1.3 — The Agent Loop (ReAct from scratch)\n")
 
-    # # Goal 1: Single tool use
-    # run_agent("What is 347 multiplied by 28?")
+    # Goal 1: Single tool use
+    run_agent("What is 347 multiplied by 28?")
 
-    # # Goal 2: Multi-step reasoning (must use calculator twice)
-    # run_agent("What is 25% of the number of minutes in a day?")
+    # Goal 2: Multi-step reasoning (must use calculator twice)
+    run_agent("What is 25% of the number of minutes in a day?")
 
-    # # Goal 3: Knowledge + math combined
-    # run_agent("What is Ollama and on which port does it run? Also tell me what 11434 divided by 2 is.")
+    # Goal 3: Knowledge + math combined
+    run_agent("What is Ollama and on which port does it run? Also tell me what 11434 divided by 2 is.")
 
     # Goal 4: Time awareness
     run_agent("What day of the week is it today, and what is the square root of today's day of the year?")
