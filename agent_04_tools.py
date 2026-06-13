@@ -5,6 +5,7 @@ import re
 import os
 from datetime import datetime
 from dotenv import load_dotenv
+from llm import call_llm
 
 load_dotenv()
 
@@ -226,6 +227,13 @@ When you have the final answer (no more tools needed), respond with ONLY this JS
 
 RULES:
 - Always respond with valid JSON — nothing else
+- Always start with a Thought
+- Only call ONE tool per response
+- STOP generating text immediately after the Action.
+- Do NOT generate an "Observation" yourself. 
+- Wait for the user to provide the "Observation" in the next message.
+- Never make up tool results — always use the actual Observation
+- When you have enough information, give the Final Answer
 - Use tools when you need real data or calculations
 - Never guess or make up results — always use tools
 - You may call tools multiple times to complete a task
@@ -275,12 +283,7 @@ def run_agent(goal: str, registry: ToolRegistry, max_steps: int = 8):
         print(f"\n┌── Step {step} ───────────────────────────────")
 
         # ① THINK
-        raw = requests.post(OLLAMA_URL, json={
-            "model": MODEL,
-            "messages": messages,
-            "stream": False,
-            "options": {"temperature": 0}
-        }).json()["message"]["content"]
+        raw = call_llm(messages)
 
         parsed = parse_response(raw)
 
