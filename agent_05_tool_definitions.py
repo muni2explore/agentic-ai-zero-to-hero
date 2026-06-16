@@ -5,13 +5,35 @@ import re
 import os
 import time
 import hashlib
+import logging
 from datetime import datetime
 from typing import Any, Callable
 from llm import call_llm
-from logging import log
 
 OLLAMA_URL = "http://localhost:11434/api/chat"
 MODEL = "llama3.2"
+LOG_DIR = "logs"
+DEFAULT_LOG_FILE = os.path.join(LOG_DIR, "agent_05.log")
+
+
+def setup_logging(log_file: str = DEFAULT_LOG_FILE) -> logging.Logger:
+    os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    logger = logging.getLogger("agent_05_tool_definitions")
+    logger.setLevel(logging.INFO)
+    if not logger.handlers:
+        formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+
+        file_handler = logging.FileHandler(log_file, encoding="utf-8")
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+    return logger
+
+
+logger = setup_logging()
 
 
 # ─────────────────────────────────────────────
@@ -94,6 +116,7 @@ class ToolRegistry:
         """
         if name not in self.tools:
             available = list(self.tools.keys())
+            logger.warning("Unknown tool requested: %s", name)
             return f"Unknown tool '{name}'. Available tools: {available}", False
 
         tool = self.tools[name]
@@ -101,6 +124,7 @@ class ToolRegistry:
         # Validate args first
         valid, error = ArgValidator.validate(args, tool["schema"])
         if not valid:
+            logger.warning("Validation failed for tool %s: %s", name, error)
             return f"Argument error for '{name}': {error}", False
 
         # Execute with retry
@@ -109,13 +133,16 @@ class ToolRegistry:
             try:
                 result = tool["fn"](**args)
                 self.usage_count[name] += 1
+                logger.info("Tool executed: %s args=%s result=%s", name, args, result)
                 return str(result), True
             except Exception as e:
                 last_error = str(e)
                 self.error_count[name] += 1
+                logger.exception("Tool '%s' failed on attempt %s: %s", name, attempt, e)
                 if attempt < retry:
                     time.sleep(0.5)
 
+        logger.error("Tool '%s' failed after %s attempts: %s", name, retry, last_error)
         return f"Tool '{name}' failed after {retry} attempts: {last_error}", False
 
     def get_prompt_text(self, category_filter: str = None) -> str:
@@ -400,6 +427,9 @@ IMPORTANT:
 - Parameters marked * are required, ? are optional
 - For enum parameters, use ONLY the listed values exactly
 - Never fabricate results — always use tool observations
+- ONLY output ONE JSON object. Do NOT output multiple lines of JSON.
+- Never wrap your JSON in `<think>` tags or include reasoning outside the JSON.
+- For multi-step tasks: Output ONE tool call, wait for the observation, then decide the next step.
 """
 
 
@@ -432,10 +462,10 @@ def run_agent(goal: str, registry: ToolRegistry, max_steps: int = 10):
         {"role": "user",   "content": goal}
     ]
 
-    log.info(messages)
+    logger.info("Starting agent run: %s", goal)
+    logger.info("Initial messages: %s", messages)
 
     for step in range(1, max_steps + 1):
-         
         raw = call_llm(messages)
 
         parsed = parse_response(raw)
@@ -443,6 +473,7 @@ def run_agent(goal: str, registry: ToolRegistry, max_steps: int = 10):
         if parsed.get("parse_error"):
             print(f"\n⚠️  Step {step}: JSON parse failed")
             print(f"   Raw: {parsed['raw'][:150]}...")
+            logger.warning("JSON parse failed at step %s: %s", step, parsed['raw'])
             messages.append({"role": "assistant", "content": raw})
             messages.append({"role": "user", "content":
                 'Invalid JSON. Respond with exactly: {"thought": "...", "tool": "...", "args": {...}}'})
@@ -451,6 +482,7 @@ def run_agent(goal: str, registry: ToolRegistry, max_steps: int = 10):
         thought = parsed.get("thought", "")
         print(f"\n┌ Step {step}")
         print(f"│ 💭 {thought}")
+        logger.info("Step %s thought: %s", step, thought)
 
         if "final_answer" in parsed:
             print(f"└ ✅ {parsed['final_answer']}")
@@ -460,16 +492,19 @@ def run_agent(goal: str, registry: ToolRegistry, max_steps: int = 10):
         tool_args = parsed.get("args", {})
 
         if not tool_name:
+            logger.warning("No tool name returned at step %s. Raw response: %s", step, raw)
             messages.append({"role": "assistant", "content": raw})
             messages.append({"role": "user", "content": "Provide a tool call or final_answer."})
             continue
 
         print(f"│ 🔧 {tool_name}({json.dumps(tool_args)})")
+        logger.info("Calling tool %s with args %s", tool_name, tool_args)
 
         observation, success = registry.execute(tool_name, tool_args)
 
         if not success:
             print(f"│ ❌ Tool failed: {observation}")
+            logger.warning("Tool %s failed at step %s: %s", tool_name, step, observation)
             # Tell agent the tool failed so it can try differently
             messages.append({"role": "assistant", "content": raw})
             messages.append({"role": "user", "content":
@@ -477,6 +512,7 @@ def run_agent(goal: str, registry: ToolRegistry, max_steps: int = 10):
             continue
 
         print(f"│ 👁️  {observation}")
+        logger.info("Tool %s observation: %s", tool_name, observation)
         print(f"└────────────────────────────────")
 
         messages.append({"role": "assistant", "content": raw})
