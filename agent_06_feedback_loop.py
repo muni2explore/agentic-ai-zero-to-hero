@@ -16,7 +16,7 @@ DEFAULT_LOG_FILE = os.path.join(LOG_DIR, "agent_06.log")
 
 def setup_logging(log_file: str = DEFAULT_LOG_FILE) -> logging.Logger:
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
-    logger = logging.getLogger("agent_05_tool_definitions")
+    logger = logging.getLogger("agent_06_feedback_loop")
     logger.setLevel(logging.INFO)
     if not logger.handlers:
         formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -339,11 +339,11 @@ TOOLS:
 {tools}
 
 CHAINING RULES:
-- Break complex goals into ordered steps — do one tool call at a time
-- Use the result of each tool as input to the next when needed
-- If a tool fails, try an alternative approach — don't give up immediately
-- If a step is truly impossible, skip it and continue with remaining steps
-- Only give Final Answer when ALL required steps are done
+- Break complex goals into ordered steps.
+- **IMPORTANT**: You must issue ONLY ONE tool call at a time.
+- After issuing a tool call, stop and wait for the "Observation" feedback.
+- Once you have the observation, use it to decide your next step or provide the Final Answer.
+- Do not output multiple tool calls or a Final Answer in the same message.
 
 RESPONSE FORMAT — ONLY valid JSON, one of these two:
 
@@ -390,11 +390,13 @@ def run_agent(goal: str, registry: ToolRegistry, max_steps: int = 15) -> str:
     consecutive_failures = 0
 
     for step in range(1, max_steps + 1):
-
+        logger.info("Messages: %s", messages)
         # ① THINK
         raw = call_llm(messages)
-
+        logger.info("RAW LLM Response: %s", raw)
         parsed = parse_llm(raw)
+
+        logger.info("parsed: %s", parsed)
 
         # Handle parse failure
         if parsed.get("parse_error"):
