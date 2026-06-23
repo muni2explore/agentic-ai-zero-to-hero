@@ -11,3 +11,4 @@ wheels/
 .env
 *.txt
 logs
+*.db
