@@ -10,8 +10,6 @@ from datetime import datetime
 from typing import Any, Callable
 from llm import call_llm
 
-OLLAMA_URL = "http://localhost:11434/api/chat"
-MODEL = "llama3.2"
 LOG_DIR = "logs"
 DEFAULT_LOG_FILE = os.path.join(LOG_DIR, "agent_05.log")
 
