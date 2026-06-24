@@ -12,3 +12,4 @@ wheels/
 *.txt
 logs
 *.db
+chroma_memory
