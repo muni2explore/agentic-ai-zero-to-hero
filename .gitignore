@@ -13,3 +13,4 @@ wheels/
 logs
 *.db
 chroma_memory
+chroma_hybrid
